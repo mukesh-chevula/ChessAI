@@ -1,5 +1,6 @@
 import pygame
 import os
+import copy
 
 pygame.init()
 
@@ -93,6 +94,86 @@ def move_piece(start, end):
         board[er][ec] = board[sr][sc]  
         board[sr][sc] = ""  
 
+def find_king(color, board_state):
+    for row in range(8):
+        for col in range(8):
+            if board_state[row][col] == f"{color}K":
+                return (row, col)
+    return None
+
+def is_square_attacked(row, col, attacker_color, board_state):
+    for r in range(8):
+        for c in range(8):
+            piece = board_state[r][c]
+            if piece and piece[0] == attacker_color:
+                if is_piece_attack_valid((r, c), (row, col), board_state):
+                    return True
+    return False
+
+def is_piece_attack_valid(start, end, board_state):
+    sr, sc = start
+    er, ec = end
+    piece = board_state[sr][sc]
+
+    if not piece:  
+        return False
+
+    color = piece[0]
+    piece_type = piece[1]
+
+    if piece_type == "P":  
+        direction = -1 if color == "w" else 1
+        return (abs(sc - ec) == 1 and er == sr + direction and 
+                board_state[er][ec] and board_state[er][ec][0] != color)
+
+    elif piece_type == "N":  
+        return (abs(sr - er), abs(sc - ec)) in [(2, 1), (1, 2)]
+
+    elif piece_type == "B":  
+        return (abs(sr - er) == abs(sc - ec) and 
+                not is_path_blocked(start, end, board_state))
+
+    elif piece_type == "R":  
+        return ((sr == er or sc == ec) and 
+                not is_path_blocked(start, end, board_state))
+
+    elif piece_type == "Q":  
+        return ((abs(sr - er) == abs(sc - ec) or sr == er or sc == ec) and 
+                not is_path_blocked(start, end, board_state))
+
+    elif piece_type == "K":  
+        return max(abs(sr - er), abs(sc - ec)) == 1
+
+    return False
+
+def is_path_blocked(start, end, board_state):
+    sr, sc = start
+    er, ec = end
+
+    if sr == er:  
+        step = 1 if ec > sc else -1
+        for c in range(sc + step, ec, step):
+            if board_state[sr][c]:
+                return True
+
+    elif sc == ec: 
+        step = 1 if er > sr else -1
+        for r in range(sr + step, er, step):
+            if board_state[r][sc]:
+                return True
+
+    else:  
+        step_r = 1 if er > sr else -1
+        step_c = 1 if ec > sc else -1
+        r, c = sr + step_r, sc + step_c
+        while r != er and c != ec:
+            if board_state[r][c]:
+                return True
+            r += step_r
+            c += step_c
+
+    return False
+
 def is_valid_move(start, end):
     sr, sc = start
     er, ec = end
@@ -110,102 +191,95 @@ def is_valid_move(start, end):
     if board[er][ec] and board[er][ec][0] == color:
         return False
 
+    temp_board = [row[:] for row in board]
+    temp_board[er][ec] = temp_board[sr][sc]
+    temp_board[sr][sc] = ""
+
+    if is_in_check(color, temp_board):
+        return False
+
     if piece_type == "P":  
-        return is_valid_pawn_move(start, end, color)
+        direction = -1 if color == "w" else 1
+        if sc == ec:
+            if (sr + direction == er and not board[er][ec]) or \
+               (sr + 2 * direction == er and sr in (1, 6) and 
+                not board[er][ec] and not board[sr + direction][sc]):
+                return True
+        elif abs(sc - ec) == 1 and er == sr + direction and \
+             board[er][ec] and board[er][ec][0] != color:
+            return True
 
     elif piece_type == "N":  
-        return is_valid_knight_move(start, end)
+        return (abs(sr - er), abs(sc - ec)) in [(2, 1), (1, 2)]
 
     elif piece_type == "B":  
-        return is_valid_bishop_move(start, end)
+        return (abs(sr - er) == abs(sc - ec) and 
+                not is_path_blocked(start, end, board))
 
     elif piece_type == "R":  
-        return is_valid_rook_move(start, end)
+        return ((sr == er or sc == ec) and 
+                not is_path_blocked(start, end, board))
 
     elif piece_type == "Q":  
-        return is_valid_queen_move(start, end)
+        return ((abs(sr - er) == abs(sc - ec) or sr == er or sc == ec) and 
+                not is_path_blocked(start, end, board))
 
     elif piece_type == "K":  
-        return is_valid_king_move(start, end)
+        return max(abs(sr - er), abs(sc - ec)) == 1
 
     return False
 
-def is_valid_pawn_move(start, end, color):
-    sr, sc = start
-    er, ec = end
-    direction = -1 if color == "w" else 1  
-
-    if sc == ec:  
-        if (sr + direction == er and not board[er][ec]) or (sr + 2 * direction == er and sr in (1, 6) and not board[er][ec] and not board[sr + direction][sc]):
-            return True  
-
-    elif abs(sc - ec) == 1 and er == sr + direction and board[er][ec] and board[er][ec][0] != color:
-        return True  
-
+def is_in_check(color, board_state):
+    king_pos = find_king(color, board_state)
+    if king_pos:
+        return is_square_attacked(king_pos[0], king_pos[1], 
+                                   "b" if color == "w" else "w", 
+                                   board_state)
     return False
 
-def is_valid_knight_move(start, end):
-    sr, sc = start
-    er, ec = end
-    return (abs(sr - er), abs(sc - ec)) in [(2, 1), (1, 2)]
+def get_all_legal_moves(color):
+    legal_moves = []
+    
+    for row in range(8):
+        for col in range(8):
+            piece = board[row][col]
+            if piece and piece[0] == color:
+                for r in range(8):
+                    for c in range(8):
+                        if is_valid_move((row, col), (r, c)):
+                            legal_moves.append(((row, col), (r, c)))
+    
+    return legal_moves
 
-def is_valid_bishop_move(start, end):
-    sr, sc = start
-    er, ec = end
-    return abs(sr - er) == abs(sc - ec) and not is_blocked(start, end)
+def is_checkmate(color):
+    return is_in_check(color, board) and len(get_all_legal_moves(color)) == 0
 
-def is_valid_rook_move(start, end):
-    sr, sc = start
-    er, ec = end
-    return (sr == er or sc == ec) and not is_blocked(start, end)
+def main():
+    global selected_piece, turn, board
+    
+    running = True
+    clock = pygame.time.Clock()
+    
+    while running:
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                running = False
+            elif event.type == pygame.MOUSEBUTTONDOWN:
+                handle_click(event.pos)
 
-def is_valid_queen_move(start, end):
-    return is_valid_bishop_move(start, end) or is_valid_rook_move(start, end)
+        screen.fill((255, 255, 255))
+        draw_chessboard(screen)
+        draw_pieces(screen, board)
 
-def is_valid_king_move(start, end):
-    sr, sc = start
-    er, ec = end
-    return max(abs(sr - er), abs(sc - ec)) == 1
+        if is_in_check(turn, board):
+            print(f"{turn} is in check!")
+        
+        if is_checkmate(turn):
+            print(f"Checkmate! {turn} loses.")
+            running = False  
+        pygame.display.flip()
+        clock.tick(60)  
+    pygame.quit()
 
-def is_blocked(start, end):
-    sr, sc = start
-    er, ec = end
-
-    if sr == er:  
-        step = 1 if ec > sc else -1
-        for c in range(sc + step, ec, step):
-            if board[sr][c]:
-                return True
-
-    elif sc == ec:  
-        step = 1 if er > sr else -1
-        for r in range(sr + step, er, step):
-            if board[r][sc]:
-                return True
-
-    else:  
-        step_r = 1 if er > sr else -1
-        step_c = 1 if ec > sc else -1
-        r, c = sr + step_r, sc + step_c
-        while r != er and c != ec:
-            if board[r][c]:
-                return True
-            r += step_r
-            c += step_c
-
-    return False
-
-running = True
-while running:
-    for event in pygame.event.get():
-        if event.type == pygame.QUIT:
-            running = False
-        elif event.type == pygame.MOUSEBUTTONDOWN:
-            handle_click(event.pos)
-
-    draw_chessboard(screen)
-    draw_pieces(screen, board)
-
-    pygame.display.flip()
-
-pygame.quit()
+if __name__ == "__main__":
+    main()
