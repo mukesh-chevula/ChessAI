@@ -29,6 +29,12 @@ board = [row[:] for row in STARTING_POSITION]
 selected_piece = None  
 turn = "w"  
 
+king_moved = {'w': False, 'b': False}
+rook_moved = {
+    'w': {'kingside': False, 'queenside': False},
+    'b': {'kingside': False, 'queenside': False}
+}
+
 def load_pieces():
     pieces = {}
     piece_mapping = {
@@ -86,13 +92,101 @@ def handle_click(position):
         if board[row][col] and board[row][col][0] == turn:  
             selected_piece = (row, col)
 
-def move_piece(start, end):
+def is_valid_castling(start, end):
     sr, sc = start
     er, ec = end
+    piece = board[sr][sc]
+    color = piece[0]
+
+    if piece[1] != 'K':
+        return False
+
+    if king_moved[color]:
+        return False
+
+    is_kingside = ec > sc
+    rook_side = "kingside" if is_kingside else "queenside"
+
+    if rook_moved[color][rook_side]:
+        return False
+
+    if is_kingside:
+        if color == 'w':
+            return (not board[7][5] and not board[7][6] and 
+                    not is_square_attacked(7, 4, 'b', board) and 
+                    not is_square_attacked(7, 5, 'b', board) and 
+                    not is_square_attacked(7, 6, 'b', board))
+        else:
+            return (not board[0][5] and not board[0][6] and 
+                    not is_square_attacked(0, 4, 'w', board) and 
+                    not is_square_attacked(0, 5, 'w', board) and 
+                    not is_square_attacked(0, 6, 'w', board))
+
+    else:
+        if color == 'w':
+            return (not board[7][1] and not board[7][2] and not board[7][3] and
+                    not is_square_attacked(7, 4, 'b', board) and 
+                    not is_square_attacked(7, 2, 'b', board) and 
+                    not is_square_attacked(7, 3, 'b', board))
+        else:
+            return (not board[0][1] and not board[0][2] and not board[0][3] and
+                    not is_square_attacked(0, 4, 'w', board) and 
+                    not is_square_attacked(0, 2, 'w', board) and 
+                    not is_square_attacked(0, 3, 'w', board))
+
+def perform_castling(start, end):
+    sr, sc = start
+    er, ec = end
+    color = board[sr][sc][0]
+
+    if ec > sc:
+        if color == 'w':
+            board[7][6] = board[7][4]
+            board[7][4] = ""
+            board[7][5] = board[7][7]
+            board[7][7] = ""
+        else:
+            board[0][6] = board[0][4]
+            board[0][4] = ""
+            board[0][5] = board[0][7]
+            board[0][7] = ""
+
+    else:
+        if color == 'w':
+            board[7][2] = board[7][4]
+            board[7][4] = ""
+            board[7][3] = board[7][0]
+            board[7][0] = ""
+        else:
+            board[0][2] = board[0][4]
+            board[0][4] = ""
+            board[0][3] = board[0][0]
+            board[0][0] = ""
+
+def move_piece(start, end):
+    global king_moved, rook_moved
+    sr, sc = start
+    er, ec = end
+    piece = board[sr][sc]
+
+    if piece[1] == 'K':
+        if abs(sc - ec) == 2:
+            perform_castling(start, end)
+            king_moved[piece[0]] = True
+            return
+
+        king_moved[piece[0]] = True
+
+    if piece[1] == 'R':
+        color = piece[0]
+        if sc == 0:  
+            rook_moved[color]['queenside'] = True
+        elif sc == 7: 
+            rook_moved[color]['kingside'] = True
 
     if start != end:  
         board[er][ec] = board[sr][sc]  
-        board[sr][sc] = ""  
+        board[sr][sc] = "" 
 
 def find_king(color, board_state):
     for row in range(8):
@@ -181,6 +275,9 @@ def is_valid_move(start, end):
 
     if not piece:  
         return False
+    
+    if piece[1] == 'K' and abs(sc - ec) == 2:
+        return is_valid_castling(start, end)
 
     if start == end:
         return False
@@ -267,7 +364,7 @@ def main():
             elif event.type == pygame.MOUSEBUTTONDOWN:
                 handle_click(event.pos)
 
-        screen.fill((255, 255, 255))
+        screen.fill((255, 255, 255)) 
         draw_chessboard(screen)
         draw_pieces(screen, board)
 
